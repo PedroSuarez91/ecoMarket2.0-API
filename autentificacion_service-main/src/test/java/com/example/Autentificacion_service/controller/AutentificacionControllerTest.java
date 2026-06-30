@@ -1,10 +1,11 @@
 package com.example.Autentificacion_service.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+
 
 import com.example.Autentificacion_service.model.Autentificacion;
 import com.example.Autentificacion_service.service.AutentificacionService;
+
+import tools.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -38,7 +39,7 @@ public class AutentificacionControllerTest {
     @MockitoBean
     private AutentificacionService autentificacionService;
 
-    private ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+    private ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
     void testLoginExitoso() throws Exception {

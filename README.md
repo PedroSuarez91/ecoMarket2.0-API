@@ -1,39 +1,106 @@
-# EcoMarket SPA — Sistema de Microservicios
+# EcoMarket SPA 2.0 — Sistema de Microservicios + API Gateway
 
 Plataforma de e-commerce de productos ecológicos construida con una arquitectura de
-**14 microservicios** independientes. Cada servicio es una aplicación **Spring Boot**
+**14 microservicios** independientes, coordinados a través de un **API Gateway** que
+actúa como único punto de entrada. Cada microservicio es una aplicación **Spring Boot**
 autónoma, con su propio puerto, su propia base de datos **MySQL** y la misma estructura
 por capas: `Controller → Service → Repository → Model`.
 
-La comunicación entre servicios se realiza vía **REST** con `RestTemplate`.
+La comunicación entre servicios se realiza vía **REST** con `RestTemplate`. Los clientes
+solo necesitan conocer el gateway; este enruta cada petición al microservicio
+correspondiente según el path.
+
+---
 
 ## Stack tecnológico
 
-- Java 25 + Spring Boot 4.1.0
-- Spring Data JPA / Hibernate
-- MySQL
-- Lombok
-- Bean Validation (`@Valid`, `@NotNull`, `@NotBlank`, `@Positive`, etc.)
-- Maven
+| Componente | Versión |
+|---|---|
+| Java | 25 |
+| Spring Boot (microservicios) | 4.1.0 |
+| Spring Boot (API Gateway) | 4.0.7 |
+| Spring Cloud (Gateway) | 2025.1.2 |
+| Persistencia | Spring Data JPA / Hibernate + MySQL |
+| Utilidades | Lombok, Bean Validation (`@Valid`, `@NotNull`, `@NotBlank`, `@Positive`…) |
+| Build | Maven (con wrapper `mvnw`) |
+| Gateway | Spring Cloud Gateway (variante reactiva WebFlux) |
 
-## Tabla de servicios
+---
 
-| Microservicio | Puerto | Path base | Base de datos |
-|---|---|---|---|
-| usuario-ms | 8081 | `/api/v1/usuarios` | usuariosdb |
-| proveedor-ms | 8082 | `/api/v1/proveedores` | proveedoresdb |
-| carro-ms | 8083 | `/api/v1/carros` | dbcarro |
-| sucursal-ms | 8084 | `/api/v1/sucursales` | sucursaldb |
-| reabastecimiento-ms | 8085 | `/api/v1/reabastecimientos` | dbreabastecimiento |
-| factura-ms | 8087 | `/api/v1/facturas` | dbfactura |
-| catalogo | 8090 | `/api/v1/productos` (+ catálogos, categorías, reseñas) | catalogodb |
-| cupon | 8091 | `/api/v1/cupones` | cupondb |
-| soporte | 9091 | `/api/v1/soporte` | soportedb |
-| autentificacion | 9092 | `/api/v1/autentificacion` | autentificaciondb |
-| inventario | 9093 | `/api/v1/inventario` | inventariodb |
-| bodega | 9094 | `/api/v1/bodega` | bodegadb |
-| envio_service | 9095 | `/api/v1/envios` (+ rutas) | enviosdb |
-| pedido-ms | 8093 | `/api/v1/pedidos` (+ direcciones) | dbpedido |
+## Arquitectura
+
+```
+                          ┌─────────────────────────────┐
+        Cliente  ───────► │   API Gateway  (puerto 8200) │
+                          │   Spring Cloud Gateway        │
+                          └──────────────┬───────────────┘
+                                         │  enruta por path
+        ┌────────────────────────────────┼────────────────────────────────┐
+        ▼                ▼                ▼                ▼                ▼
+   usuario(8081)   catalogo(8090)   carro(8083)     pedido(8093)     envio(9095)
+   proveedor(8082) inventario(9093) cupon(8091)     factura(8087)    ...
+   sucursal(8084)  bodega(9094)     soporte(9091)   autentif.(9092)  reabast.(8085)
+```
+
+Cada microservicio levanta en su propio puerto y se conecta a su propia base de datos
+MySQL. Algunos endpoints invocan a otros servicios en tiempo de ejecución mediante
+`RestTemplate` (ver [Dependencias entre servicios](#dependencias-entre-servicios)).
+
+---
+
+## API Gateway
+
+Punto de entrada único basado en **Spring Cloud Gateway (WebFlux)**. Todas las
+peticiones entran por el gateway y se redirigen al microservicio destino sin alterar el
+path (no se usa `StripPrefix`: el path llega tal cual).
+
+
+**Tabla de enrutamiento** (todo entra por `http://localhost:8200`):
+
+| Ruta (id)           | Path                                                                          | Destino |
+|---------------------|-------------------------------------------------------------------------------|---------|
+| ms-usuario          | `/api/v1/usuarios/**`                                                         | 8081    |
+| ms-autentificacion  | `/api/v1/autentificacion/**`                                                  | 9092    |
+| ms-soporte          | `/api/v1/soporte/**`                                                          | 9091    |
+| ms-catalogo         | `/api/v1/productos/**`, `/categorias/**`, `/catalogos/**`, `/resenias/**`     | 8090    |
+| ms-inventario       | `/api/v1/inventario/**`                                                       | 9093    |
+| ms-bodega           | `/api/v1/bodega/**`                                                           | 9094    |
+| ms-sucursal         | `/api/v1/sucursales/**`                                                       | 8084    |
+| ms-proveedor        | `/api/v1/proveedores/**`                                                      | 8082    |
+| ms-reabastecimiento | `/api/v1/reabastecimientos/**`                                                | 8085    |
+| ms-cupon            | `/api/v1/cupones/**`                                                          | 8091    |
+| ms-carro            | `/api/v1/carros/**`                                                           | 8083    |
+| ms-pedido           | `/api/v1/pedidos/**`, `/api/v1/direcciones/**`                                | 8093    |
+| ms-factura          | `/api/v1/facturas/**`                                                         | 8087    |
+| ms-envio            | `/api/v1/envios/**`, `/api/v1/rutas/**`                                       | 9095    |
+
+**Ejemplo de enrutamiento:**
+
+```
+Cliente → GET  http://localhost:8200/api/v1/productos/5
+Gateway →      reenvía a → http://localhost:8090/api/v1/productos/5
+```
+
+---
+
+## Tabla de microservicios
+
+| Microservicio       | Puerto | Path base                                              | Base de datos        |
+|---------------------|--------|--------------------------------------------------------|----------------------|
+| usuario-ms          | 8081   | `/api/v1/usuarios`                                     | usuariosdb           |
+| proveedor-ms        | 8082   | `/api/v1/proveedores`                                 | proveedoresdb        |
+| carro-ms            | 8083   | `/api/v1/carros`                                      | dbcarro              |
+| sucursal-ms         | 8084   | `/api/v1/sucursales`                                  | sucursaldb           |
+| reabastecimiento-ms | 8085   | `/api/v1/reabastecimientos`                           | dbreabastecimiento   |
+| factura-ms          | 8087   | `/api/v1/facturas`                                    | dbfactura            |
+| catalogo            | 8090   | `/api/v1/productos` (+ catálogos, categorías, reseñas)| catalogodb           |
+| cupon               | 8091   | `/api/v1/cupones`                                     | cupondb              |
+| pedido-ms           | 8093   | `/api/v1/pedidos` (+ direcciones)                     | dbpedido             |
+| soporte             | 9091   | `/api/v1/soporte`                                     | soportedb            |
+| autentificacion     | 9092   | `/api/v1/autentificacion`                             | autentificaciondb    |
+| inventario          | 9093   | `/api/v1/inventario`                                  | inventariodb         |
+| bodega              | 9094   | `/api/v1/bodega`                                      | bodegadb             |
+| envio_service       | 9095   | `/api/v1/envios` (+ rutas)                            | enviosdb             |
 
 ---
 
@@ -117,7 +184,7 @@ Servicio con 4 controladores: catálogos, categorías, productos y reseñas.
 | GET | `/api/v1/productos/precio/rango?min=&max=` | Lista productos dentro de un rango de precio |
 | GET | `/api/v1/productos/precio/maximo?max=` | Lista productos bajo un precio máximo |
 | GET | `/api/v1/productos/precio/minimo?min=` | Lista productos sobre un precio mínimo |
-| DELETE | `/api/v1/productos/{id}` | Elimina un producto | 
+| DELETE | `/api/v1/productos/{id}` | Elimina un producto |
 
 **Catálogos**
 
@@ -159,6 +226,30 @@ Servicio con 4 controladores: catálogos, categorías, productos y reseñas.
 | GET | `/api/v1/cupones/validar/{codigo}` | Valida si un cupón es aplicable (devuelve true/false) |
 | PUT | `/api/v1/cupones/{id}` | Actualiza un cupón |
 | DELETE | `/api/v1/cupones/{id}` | Elimina un cupón |
+
+### pedido-ms — `8093`
+
+**Pedidos**
+
+| Método | Endpoint | Descripción |
+|---|---|---|
+| GET | `/api/v1/pedidos` | Lista todos los pedidos |
+| GET | `/api/v1/pedidos/{id}` | Obtiene un pedido por su id |
+| GET | `/api/v1/pedidos/usuario/{idUsuario}` | Lista los pedidos de un usuario |
+| POST | `/api/v1/pedidos/carro/{idCarro}?idDireccion=` | Crea un pedido a partir de un carro |
+| PUT | `/api/v1/pedidos/{id}/direccion/{idDireccion}` | Asigna o cambia la dirección del pedido |
+| PUT | `/api/v1/pedidos/{id}/estado?estado=` | Actualiza el estado (`PENDIENTE`, `PAGADO`, `ENVIADO`, `ENTREGADO`, `CANCELADO`) |
+| DELETE | `/api/v1/pedidos/{id}` | Elimina un pedido |
+
+**Direcciones**
+
+| Método | Endpoint | Descripción |
+|---|---|---|
+| GET | `/api/v1/direcciones` | Lista todas las direcciones |
+| GET | `/api/v1/direcciones/{id}` | Obtiene una dirección por su id |
+| POST | `/api/v1/direcciones` | Crea una dirección |
+| PUT | `/api/v1/direcciones/{id}` | Actualiza una dirección |
+| DELETE | `/api/v1/direcciones/{id}` | Elimina una dirección |
 
 ### soporte — `9091`
 
@@ -224,30 +315,6 @@ Documentación Swagger: `http://localhost:9094/doc/swagger-ui.html`
 
 Documentación Swagger: `http://localhost:9095/doc/swagger-ui.html`
 
-### pedido-ms — `8093`
-
-**Pedidos**
-
-| Método | Endpoint | Descripción |
-|---|---|---|
-| GET | `/api/v1/pedidos` | Lista todos los pedidos |
-| GET | `/api/v1/pedidos/{id}` | Obtiene un pedido por su id |
-| GET | `/api/v1/pedidos/usuario/{idUsuario}` | Lista los pedidos de un usuario |
-| POST | `/api/v1/pedidos/carro/{idCarro}?idDireccion=` | Crea un pedido a partir de un carro |
-| PUT | `/api/v1/pedidos/{id}/direccion/{idDireccion}` | Asigna o cambia la dirección del pedido |
-| PUT | `/api/v1/pedidos/{id}/estado?estado=` | Actualiza el estado (`PENDIENTE`, `PAGADO`, `ENVIADO`, `ENTREGADO`, `CANCELADO`) |
-| DELETE | `/api/v1/pedidos/{id}` | Elimina un pedido |
-
-**Direcciones**
-
-| Método | Endpoint | Descripción |
-|---|---|---|
-| GET | `/api/v1/direcciones` | Lista todas las direcciones |
-| GET | `/api/v1/direcciones/{id}` | Obtiene una dirección por su id |
-| POST | `/api/v1/direcciones` | Crea una dirección |
-| PUT | `/api/v1/direcciones/{id}` | Actualiza una dirección |
-| DELETE | `/api/v1/direcciones/{id}` | Elimina una dirección |
-
 ---
 
 ## Dependencias entre servicios
@@ -266,6 +333,35 @@ estar corriendo:
 - `envio` → pedido
 - `autentificacion` → usuario
 
-Cada microservicio levanta en su puerto indicado en la tabla. La base de datos MySQL
-correspondiente debe existir; Hibernate crea las tablas automáticamente
-(`spring.jpa.hibernate.ddl-auto=update`).
+---
+
+## Cómo ejecutar el sistema
+
+### Requisitos
+
+- **Java 25** (JDK)
+- **MySQL** corriendo en `localhost:3306`
+- Maven no es obligatorio: cada módulo incluye el wrapper `mvnw` / `mvnw.cmd`
+
+## Estructura del repositorio
+
+```
+ecoMarket2.0+API/
+├── api-gateway/                  # Spring Cloud Gateway (entrada única, puerto 8200)
+├── usuario-ms-master/            # 8081
+├── proveedor-ms-master/          # 8082
+├── carro-ms-master/              # 8083
+├── sucursal-ms-master/           # 8084
+├── reabastecimiento-ms-master/   # 8085
+├── factura-master/               # 8087
+├── catalogo-main/                # 8090
+├── cupon-master/                 # 8091
+├── pedido-master/                # 8093
+├── soporte_service-main/         # 9091
+├── autentificacion_service-main/ # 9092
+├── inventario_service-main/      # 9093
+├── bodega_service-main/          # 9094
+├── envio_service-main/           # 9095
+└── README.md
+```
+

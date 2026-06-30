@@ -335,14 +335,6 @@ estar corriendo:
 
 ---
 
-## Cómo ejecutar el sistema
-
-### Requisitos
-
-- **Java 25** (JDK)
-- **MySQL** corriendo en `localhost:3306`
-- Maven no es obligatorio: cada módulo incluye el wrapper `mvnw` / `mvnw.cmd`
-
 ## Estructura del repositorio
 
 ```
